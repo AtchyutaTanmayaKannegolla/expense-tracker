@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Personal Expense Tracker</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+    h1 { text-align: center; margin-bottom: 24px; }
+    
+    /* Summary Dashboard Cards */
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .total-amount {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .breakdown-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .category-chip {
+      background: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #334155;
+    }
+
+    /* Form Styles */
+    form {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr auto;
+      gap: 8px;
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    input, select, button {
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      background-color: #0284c7;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { background-color: #0369a1; }
+
+    /* Filter Bar */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .filter-bar select {
+      padding: 6px 12px;
+      background: white;
+    }
+
+    /* Table Styles */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    th, td { padding: 12px 14px; text-align: left; }
+    th { background-color: #0f172a; color: white; }
+    tr:nth-child(even) { background-color: #f1f5f9; }
+    .del-btn {
+      background-color: #ef4444;
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+    .del-btn:hover { background-color: #dc2626; }
+    .empty-state {
+      text-align: center;
+      color: #94a3b8;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>💰 Personal Expense Tracker</h1>
+
+  <!-- 1. Live Summary Dashboard -->
+  <div class="dashboard">
+    <div class="card">
+      <h3>Total Spent</h3>
+      <div class="total-amount" id="totalSpent">₹0.00</div>
+    </div>
+    <div class="card">
+      <h3>Spending by Category</h3>
+      <div class="breakdown-list" id="categoryBreakdown">
+        <span style="color: #94a3b8; font-size: 13px;">No expenses yet</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry Form -->
+  <form id="expenseForm">
+    <input type="text" id="title" placeholder="Description" required>
+    <input type="number" step="0.01" id="amount" placeholder="Amount (₹)" required>
+    <select id="category">
+      <option value="Food">Food</option>
+      <option value="Transport">Transport</option>
+      <option value="Utilities">Utilities</option>
+      <option value="Entertainment">Entertainment</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="date" id="date" required>
+    <button type="submit">Add</button>
+  </form>
+
+  <!-- 2. Category Filter Controls -->
+  <div class="filter-bar">
+    <label for="filterCategory">Filter Category:</label>
+    <select id="filterCategory" onchange="renderExpenses()">
+      <option value="ALL">All Categories</option>
+      <option value="Food">Food</option>
+      <option value="Transport">Transport</option>
+      <option value="Utilities">Utilities</option>
+      <option value="Entertainment">Entertainment</option>
+      <option value="Other">Other</option>
+    </select>
+  </div>
+
+  <!-- Expenses Table -->
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Description</th>
+        <th>Category</th>
+        <th>Amount</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="expenseTableBody"></tbody>
+  </table>
+
+  <script>
+    let allExpenses = [];
+    document.getElementById("date").valueAsDate = new Date();
+
+    // Fetch expenses from the FastAPI SQLite backend
+    async function fetchExpenses() {
+      const res = await fetch("http://127.0.0.1:8000/expenses");
+      allExpenses = await res.json();
+      updateDashboard();
+      renderExpenses();
+    }
+
+    // Update the live metrics card (always based on all expenses)
+    function updateDashboard() {
+      let total = 0;
+      const categories = {};
+
+      allExpenses.forEach(item => {
+        const val = parseFloat(item.amount) || 0;
+        total += val;
+        categories[item.category] = (categories[item.category] || 0) + val;
+      });
+
+      // Update Total
+      document.getElementById("totalSpent").textContent = `₹${total.toFixed(2)}`;
+
+      // Update Category Pills
+      const breakdownEl = document.getElementById("categoryBreakdown");
+      const categoryKeys = Object.keys(categories);
+
+      if (categoryKeys.length === 0) {
+        breakdownEl.innerHTML = `<span style="color: #94a3b8; font-size: 13px;">No expenses yet</span>`;
+        return;
+      }
+
+      breakdownEl.innerHTML = categoryKeys
+        .map(cat => `<div class="category-chip">${cat}: ₹${categories[cat].toFixed(2)}</div>`)
+        .join("");
+    }
+
+    // Render table rows based on active filter
+    function renderExpenses() {
+      const selectedFilter = document.getElementById("filterCategory").value;
+      const filtered = selectedFilter === "ALL" 
+        ? allExpenses 
+        : allExpenses.filter(item => item.category === selectedFilter);
+
+      const tbody = document.getElementById("expenseTableBody");
+      tbody.innerHTML = "";
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No matching records found.</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.date}</td>
+          <td>${item.title}</td>
+          <td>${item.category}</td>
+          <td>₹${parseFloat(item.amount).toFixed(2)}</td>
+          <td><button class="del-btn" onclick="removeExpense(${item.id})">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Form submission handler
+    document.getElementById("expenseForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await fetch("http://127.0.0.1:8000/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: document.getElementById("title").value,
+          amount: parseFloat(document.getElementById("amount").value),
+          category: document.getElementById("category").value,
+          date: document.getElementById("date").value
+        })
+      });
+
+      document.getElementById("title").value = "";
+      document.getElementById("amount").value = "";
+      fetchExpenses();
+    });
+
+    // Delete record handler
+    async function removeExpense(id) {
+      if (confirm("Are you sure you want to delete this expense?")) {
+        await fetch(`http://127.0.0.1:8000/expenses/${id}`, { method: "DELETE" });
+        fetchExpenses();
+      }
+    }
+
+    // Initial load
+    fetchExpenses();
+  </script>
+</body>
+</html>
